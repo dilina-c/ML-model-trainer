@@ -1,0 +1,14 @@
+# fly.toml file generated for little-mountain-8029 on 2023-02-16T00:56:38+05:30
+
+app = "little-mountain-8029"
+kill_signal = "SIGINT"
+kill_timeout = 5
+
+[build]
+  builder = "paketobuildpacks/builder:base"
+
+[env]
+
+[experimental]
+  auto_rollback = true
+
