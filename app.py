@@ -8,20 +8,20 @@ from firebase_admin import credentials,firestore
 from datetime import datetime, timedelta
 import firebase_admin
 from firebase_admin import credentials ,storage
-import os
+#import os
 import time
 
 
 def trainPredictionModel():
     try:
         while True:
-            cred = credentials.Certificate("smart-power-adapter-3a443-firebase-adminsdk-4gp49-a276da6c45.json")
+            cred = credentials.Certificate("smart-adapter-test1-firebase-adminsdk-9nc3j-f8cd8e9177.json")
             firebase_admin.initialize_app(cred,{'storageBucket' : "smart-power-adapter-3a443.appspot.com"})
             db = firestore.client()
             devices_col_ref = db.collection(u'devices')
             bucket = storage.bucket()
             now = datetime.now()
-            three_months_ago = now - timedelta(days=2)
+            three_months_ago = now - timedelta(days=30)
             data=[]
             print("data retrieving from firebase....")
             for device_doc_snap in devices_col_ref.stream():
@@ -30,30 +30,59 @@ def trainPredictionModel():
                 print("data retrieving from "+ device_id)
                 for reading_doc_snap in readings_col_ref.where(u"time", u">=", three_months_ago.timestamp()).stream():
                     datum=reading_doc_snap.to_dict()
-                    datum["isOn"] = True if datum["i"] > 0.4 else False
+                    datum["isOn"] = True if datum["i"] > 0.01 else False
                     datum["day_of_week"] = datetime.fromtimestamp(datum["time"]/1000).weekday()
                     datum["time_of_day"] = datetime.fromtimestamp(datum["time"]/1000).strftime("%I")
+                    datum["power"] = datum["i"]*datum["v"]
                     data.append(datum)
                 print("data retrieved")
                 df= pd.DataFrame.from_dict(data)
 
-                X = df[['time_of_day', 'day_of_week']]
-                y = df['isOn']
+                X1 = df[['time_of_day', 'day_of_week']]
+                y1 = df['isOn']
 
-                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+                #X_train, X_test, y_train, y_test = train_test_split(X1, y1, test_size=0.2)
 
-                model = RandomForestClassifier()
-                model.fit(X_train.values, y_train.values)
+                model1 = RandomForestClassifier()
+                model1.fit(X1, y1)
 
-                score = model.score(X_test.values, y_test.values)
+                #score = model.score(X_test.values, y_test.values)
                 
-                fileName = device_id +'.joblib'
-                joblib.dump(model,f'{fileName}')
-                print("model saved for device "+ device_id)
-                blob = bucket.blob(fileName)
-                blob.upload_from_filename(fileName)
-                #os.remove(fileName)
-                print("model uploaded to firebase for device "+ device_id)
+                fileName1 = device_id +'_anomaly.joblib'
+                joblib.dump(model1,f'{fileName1}')
+                print("Anamoaly model saved for device "+ device_id)
+                blob = bucket.blob(fileName1)
+                blob.upload_from_filename(fileName1)
+                #os.remove(fileName1)
+                print("Anomaly detection model uploaded to firebase for device "+ device_id)
+
+
+                # model for power consumption
+
+                hourly_data = df.groupby(['day_of_week', 'time_of_day']).agg({'power': ['mean', 'std']})
+                hourly_data.columns = ['_'.join(col).rstrip('_') for col in hourly_data.columns.values]
+
+                hourly_data = hourly_data.reset_index()
+                hourly_data = hourly_data[['day_of_week', 'time_of_day', 'power_mean', 'power_std']]
+
+                #print(hourly_data)
+
+                X2 = hourly_data[['time_of_day', 'day_of_week']]
+                y2 = hourly_data['power_mean']
+
+                model2 = RandomForestRegressor(n_estimators=100, random_state=42)
+                model2.fit(X2, y2)
+
+
+                fileName2= device_id +'_power_consumption.joblib'
+                joblib.dump(model2,f'{fileName2}')
+                print("Power consumption detection model saved for device "+ device_id)
+                blob = bucket.blob(fileName2)
+                blob.upload_from_filename(fileName2)
+                #os.remove(fileName2)
+                print("Power consumption detection model uploaded to firebase for device "+ device_id)
+
+
             print("model training completed")
             time.sleep(60*60*6)
     except Exception as e: 
