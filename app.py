@@ -1,22 +1,18 @@
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 import joblib
 import firebase_admin
-from firebase_admin import credentials,firestore
+from firebase_admin import credentials,firestore,storage
 from datetime import datetime, timedelta
-import firebase_admin
-from firebase_admin import credentials ,storage
-#import os
-import time
+import os, time
 
+cred = credentials.Certificate("smart-power-adapter-3a443-firebase-adminsdk-4gp49-a276da6c45.json")
+firebase_admin.initialize_app(cred,{'storageBucket' : "smart-power-adapter-3a443.appspot.com"})
 
 def trainPredictionModel():
     try:
         while True:
-            cred = credentials.Certificate("smart-adapter-test1-firebase-adminsdk-9nc3j-f8cd8e9177.json")
-            firebase_admin.initialize_app(cred,{'storageBucket' : "smart-power-adapter-3a443.appspot.com"})
+            
             db = firestore.client()
             devices_col_ref = db.collection(u'devices')
             bucket = storage.bucket()
@@ -41,21 +37,16 @@ def trainPredictionModel():
                 X1 = df[['time_of_day', 'day_of_week']]
                 y1 = df['isOn']
 
-                #X_train, X_test, y_train, y_test = train_test_split(X1, y1, test_size=0.2)
-
                 model1 = RandomForestClassifier()
-                model1.fit(X1, y1)
+                model1.fit(X1.values, y1.values)
 
-                #score = model.score(X_test.values, y_test.values)
-                
                 fileName1 = device_id +'_anomaly.joblib'
                 joblib.dump(model1,f'{fileName1}')
                 print("Anamoaly model saved for device "+ device_id)
                 blob = bucket.blob(fileName1)
                 blob.upload_from_filename(fileName1)
-                #os.remove(fileName1)
+                os.remove(fileName1)
                 print("Anomaly detection model uploaded to firebase for device "+ device_id)
-
 
                 # model for power consumption
 
@@ -65,23 +56,19 @@ def trainPredictionModel():
                 hourly_data = hourly_data.reset_index()
                 hourly_data = hourly_data[['day_of_week', 'time_of_day', 'power_mean', 'power_std']]
 
-                #print(hourly_data)
-
                 X2 = hourly_data[['time_of_day', 'day_of_week']]
                 y2 = hourly_data['power_mean']
 
                 model2 = RandomForestRegressor(n_estimators=100, random_state=42)
-                model2.fit(X2, y2)
-
+                model2.fit(X2.values, y2.values)
 
                 fileName2= device_id +'_power_consumption.joblib'
                 joblib.dump(model2,f'{fileName2}')
                 print("Power consumption detection model saved for device "+ device_id)
                 blob = bucket.blob(fileName2)
                 blob.upload_from_filename(fileName2)
-                #os.remove(fileName2)
+                os.remove(fileName2)
                 print("Power consumption detection model uploaded to firebase for device "+ device_id)
-
 
             print("model training completed")
             time.sleep(60*60*6)
